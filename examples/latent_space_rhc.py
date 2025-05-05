@@ -10,7 +10,7 @@ import os
 from sdv.metadata import SingleTableMetadata, Metadata
 
 from tvae.tvae_wrapper import TVAESynthesizer, LossValuesMixin
-from tvae.data_loader import load_csvss
+from tvae.data_loader import load_csvs
 
 def visualize_latent_space_rhc(tvae_model, data, n_neighbors=15, min_dist=0.1, 
                           color_by=None, hover_data=None, title="Espace latent TVAE (UMAP)",

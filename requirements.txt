@@ -19,6 +19,7 @@ fsspec==2025.3.2
 graphviz==0.20.3
 ipykernel==6.29.5
 ipython==8.36.0
+ipywidget==8.1.7
 jedi==0.19.2
 Jinja2==3.1.6
 jmespath==1.0.1

@@ -19,6 +19,7 @@ from tvae.visualization import (
     plot_latent_dimensions
 )
 
+"python examples/latent_space_rhc.py"
 
 def load_model(model_path):
     """Load a trained TVAE model from disk."""

@@ -1,3 +1,5 @@
+"""Visualization utilities for TVAE models."""
+
 import numpy as np
 import pandas as pd
 import torch
@@ -6,6 +8,9 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from tqdm import tqdm
 from torch.utils.data import DataLoader, TensorDataset
+
+from tvae.tvae import Encoder
+
 
 def visualize_latent_space(
     tvae_synthesizer, 
@@ -66,27 +71,18 @@ def visualize_latent_space(
     # Get the device
     device = tvae_synthesizer._model._device
     
-    # Transform the data through the data processor
-    processed_data = tvae_synthesizer._data_processor.transform(data)
+    # Store color values before transformation if color_by is provided
+    color_values = None
+    if color_by is not None and color_by in data.columns:
+        color_values = data[color_by].copy()
     
-    # If discrete_columns not provided, try to detect from metadata
-    if discrete_columns is None:
-        transformers = tvae_synthesizer._data_processor._hyper_transformer.field_transformers
-        try:
-            from sdv.single_table.utils import detect_discrete_columns
-            discrete_columns = detect_discrete_columns(tvae_synthesizer.metadata, processed_data, transformers)
-        except:
-            discrete_columns = []
-            print("Could not automatically detect discrete columns. Treating all as continuous.")
+    # Transform the data through the data transformer from the TVAE model
+    # This is safer than using the data processor which might modify column names
+    transformed_data = tvae_synthesizer._model.transformer.transform(data)
     
-    # Create a dataset and dataloader
-    dataset = TensorDataset(torch.from_numpy(processed_data.astype('float32')).to(device))
+    # Create a dataset and dataloader with the transformed data
+    dataset = TensorDataset(torch.from_numpy(transformed_data.astype('float32')).to(device))
     dataloader = DataLoader(dataset, batch_size=100, shuffle=False)
-    
-    # Extract the encoder from TVAE model
-    # This requires accessing the encoder which is not stored in the TVAE model after training
-    # So we need to recreate it with the same parameters
-    from tvae.tvae import Encoder
     
     # Get data dimensions from the transformer
     data_dim = tvae_synthesizer._model.transformer.output_dimensions
@@ -98,9 +94,6 @@ def visualize_latent_space(
         embedding_dim=tvae_synthesizer.embedding_dim
     ).to(device)
     
-    # We need to train this encoder on the same data
-    # Since we don't have access to the trained encoder
-    # This is a simplified approach to get approximate embeddings
     print("Extracting latent embeddings...")
     
     # We'll collect encodings by passing data through the model
@@ -134,15 +127,22 @@ def visualize_latent_space(
     # Create the visualization
     fig, ax = plt.subplots(figsize=figsize)
     
-    if color_by is not None and color_by in data.columns:
-        color_values = data[color_by].values
-        
+    if color_values is not None:
         # Check if the column is categorical or numerical
-        if color_by in discrete_columns or pd.api.types.is_categorical_dtype(data[color_by]) or \
-           pd.api.types.is_object_dtype(data[color_by]) or \
-           pd.api.types.is_string_dtype(data[color_by]):
+        if pd.api.types.is_numeric_dtype(color_values):
+            # Numerical coloring
+            scatter = ax.scatter(
+                embedding[:, 0], 
+                embedding[:, 1],
+                s=point_size,
+                alpha=alpha,
+                c=color_values,
+                cmap=cmap
+            )
+            plt.colorbar(scatter, label=color_by)
+        else:
             # Categorical coloring
-            unique_categories = data[color_by].unique()
+            unique_categories = color_values.unique()
             category_colors = sns.color_palette('tab10', n_colors=len(unique_categories))
             
             for i, category in enumerate(unique_categories):
@@ -156,18 +156,6 @@ def visualize_latent_space(
                     color=category_colors[i]
                 )
             ax.legend(title=color_by)
-            
-        else:
-            # Numerical coloring
-            scatter = ax.scatter(
-                embedding[:, 0], 
-                embedding[:, 1],
-                s=point_size,
-                alpha=alpha,
-                c=color_values,
-                cmap=cmap
-            )
-            plt.colorbar(scatter, label=color_by)
     else:
         ax.scatter(
             embedding[:, 0], 
@@ -189,6 +177,7 @@ def visualize_latent_space(
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
     
     return fig, latent_embeddings, embedding
+
 
 def calculate_latent_statistics(latent_embeddings):
     """
@@ -217,6 +206,7 @@ def calculate_latent_statistics(latent_embeddings):
         })
     
     return pd.DataFrame(stats)
+
 
 def compare_original_synthetic_latent(
     tvae_synthesizer, 
@@ -295,48 +285,72 @@ def compare_original_synthetic_latent(
         'synthetic': synthetic_umap
     }
 
-# Example usage in Jupyter notebook:
-"""
-# Import necessary libraries
-import pandas as pd
-from sdv.metadata import SingleTableMetadata
-from tvae.tvae_wrapper import TVAESynthesizer
 
-# Load your data
-data = pd.read_csv('your_data.csv')
-
-# Create metadata
-metadata = SingleTableMetadata()
-metadata.detect_from_dataframe(data)
-
-# Initialize and train TVAE
-tvae = TVAESynthesizer(
-    metadata=metadata,
-    epochs=100,
-    verbose=True
-)
-tvae.fit(data)
-
-# Generate synthetic data
-synthetic_data = tvae.sample(len(data))
-
-# Visualize latent space
-fig, latent_emb, umap_emb = visualize_latent_space(
-    tvae_synthesizer=tvae,
-    data=data,
-    color_by='your_target_column',  # Optional: color by a specific column
-    save_path='tvae_latent_space.png'
-)
-
-# Compare original and synthetic data in latent space
-compare_fig, compare_latent, compare_umap = compare_original_synthetic_latent(
-    tvae_synthesizer=tvae,
-    original_data=data,
-    synthetic_data=synthetic_data,
-    save_path='tvae_compare_latent.png'
-)
-
-# Calculate statistics of the latent dimensions
-latent_stats = calculate_latent_statistics(latent_emb)
-print(latent_stats)
-"""
+def plot_latent_dimensions(
+    latent_embeddings, 
+    n_dims=None,
+    figsize=(15, 10),
+    save_path=None
+):
+    """
+    Plot the distribution of values in each latent dimension.
+    
+    Args:
+        latent_embeddings (numpy.ndarray): 
+            Latent embeddings extracted from the TVAE model.
+        n_dims (int, optional): 
+            Number of dimensions to plot. If None, all dimensions are plotted.
+        figsize (tuple, optional): 
+            Figure size. Defaults to (15, 10).
+        save_path (str, optional): 
+            Path to save the figure. If None, the figure is not saved.
+            
+    Returns:
+        matplotlib.figure.Figure: The generated figure.
+    """
+    n_total_dims = latent_embeddings.shape[1]
+    
+    if n_dims is None:
+        n_dims = n_total_dims
+    else:
+        n_dims = min(n_dims, n_total_dims)
+    
+    # Compute how many rows and columns we need for the subplot grid
+    n_cols = min(5, n_dims)
+    n_rows = (n_dims + n_cols - 1) // n_cols
+    
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=figsize)
+    if n_rows == 1 and n_cols == 1:
+        axes = np.array([axes])
+    axes = axes.flatten()
+    
+    for i in range(n_dims):
+        ax = axes[i]
+        dim_data = latent_embeddings[:, i]
+        
+        # Plot histogram with KDE
+        sns.histplot(dim_data, kde=True, ax=ax)
+        
+        # Add vertical line for mean
+        mean_val = np.mean(dim_data)
+        ax.axvline(mean_val, color='red', linestyle='--', 
+                  label=f'Mean: {mean_val:.2f}')
+        
+        # Add title and legend
+        ax.set_title(f'Dimension {i}')
+        ax.legend()
+        
+        # Only show y-label for leftmost plots
+        if i % n_cols != 0:
+            ax.set_ylabel('')
+    
+    # Hide unused subplots
+    for i in range(n_dims, len(axes)):
+        axes[i].set_visible(False)
+    
+    plt.tight_layout()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    
+    return fig

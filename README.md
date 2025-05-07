@@ -25,8 +25,7 @@ By using a Variational Autoencoder approach, we can generate new synthetic patie
 Further development will focus on expanding the evaluation metrics, implement privacy preservation & anonymization research and testing with additional healthcare datasets.
 
 ---
-**This project is part of an External Pharmacy Internship at CHU Strasbourg.**
----
+*This project is part of an External Pharmacy Internship at CHU Strasbourg.*
 
 ## How to Use
 

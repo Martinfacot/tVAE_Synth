@@ -131,4 +131,4 @@ fig, latent_coords, umap_model = visualize_latent_space_rhc(
 fig.show()
 ```
 
-Check the example notebooks in the `examples/` directory for more detailed demonstrations.
+### Check the example notebooks in the `examples/` directory for more detailed demonstrations.
